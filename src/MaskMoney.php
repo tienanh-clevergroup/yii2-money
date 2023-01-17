@@ -115,23 +115,28 @@ class MaskMoney extends InputWidget
     public function registerAssets()
     {
         $view = $this->getView();
-        MaskMoneyAsset::register($view);
+        // MaskMoneyAsset::register($view);
         $sid = $this->options['id'];
         $id = 'jQuery("#' . $this->_displayOptions['id'] . '")';
         $idSave = 'jQuery("#' . $sid . '")';
         $plugin = $this->pluginName;
+        $precision = $this->pluginOptions['precision'];
         $this->registerPlugin($plugin, $id);
         $debug = YII_DEBUG ? "\n\tconsole.log('Unmasked Output ({$sid}): ' + out);" : '';
         $js = <<< JS
-var val = parseFloat({$idSave}.val());
-{$id}.{$plugin}('mask', val);
-{$id}.on('change keyup', function (e) {
-     if (e.type ==='change' || (e.type === 'keyup' && (e.keyCode == 13 || e.which == 13))) {
-         var out = {$id}.{$plugin}('unmasked')[0];
-        {$idSave}.val(out).trigger('change');{$debug}
-     }
-});
-JS;
+            var val = parseFloat({$idSave}.val());
+            {$id}.{$plugin}('mask', val);
+            var precision = {$precision};
+            {$id}.on('change keyup', function (e) {
+
+                if (e.type ==='change' || (e.type === 'keyup' && (e.keyCode == 13 || e.which == 13))) {
+
+                    var out = {$id}.{$plugin}('unmasked')[0];
+                    out = precision == 0 ? out * 1000 : out;
+                    {$idSave}.val(out).trigger('change');{$debug}
+                }
+            });
+        JS;
         $view->registerJs($js);
     }
 

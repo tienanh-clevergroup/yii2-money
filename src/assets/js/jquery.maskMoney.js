@@ -4,11 +4,6 @@
  *  https://github.com/plentz/jquery-maskmoney
  *
  *  Made by Diego Plentz
- *  Modifications by Kartik Visweswaran for github.com/kartik-v/yii2-money:
- *  - fixes mask display bugs when precision is set to zero and suffix is set
- *  - fixes masking when precision is set but the decimal part length is less than precision length (for example
- *    1400.50 with precision 2 is wrongly displayed as 140.05 - the last zero was omitted)
- *
  *  Under MIT License
  */
 (function ($) {
@@ -19,9 +14,23 @@
         $.browser.webkit = /webkit/.test(navigator.userAgent.toLowerCase());
         $.browser.opera = /opera/.test(navigator.userAgent.toLowerCase());
         $.browser.msie = /msie/.test(navigator.userAgent.toLowerCase());
+        $.browser.device = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
     }
 
-    var methods = {
+    var defaultOptions = {
+                prefix: "",
+                suffix: "",
+                affixesStay: true,
+                thousands: ",",
+                decimal: ".",
+                precision: 2,
+                allowZero: false,
+                allowNegative: false,
+                doubleClickSelection: true,
+                allowEmpty: false,
+                bringCaretAtEndOnFocus: true
+            },
+		methods = {
         destroy: function () {
             $(this).unbind(".maskMoney");
 
@@ -50,59 +59,38 @@
 
         unmasked: function () {
             return this.map(function () {
-
-                var $input = $(this);
-                // data-* api
-                var settings = $input.data("settings");
-
                 var value = ($(this).val() || "0"),
                     isNegative = value.indexOf("-") !== -1,
-                    decimalPart = "";
+                    decimalPart;
                 // get the last position of the array that is a number(coercion makes "" to be evaluated as false)
-
-                var split = value.split(settings.decimal);
-
-                if (split[1]) {
-                    decimalPart = split[1];
-                }
-
-                split = split[0].split(/\D/);
-
-                if (split.length > 1) {
-
-                    value = "";
-
-                    $(split).each(function (index, element) {
-                        if (element) {
-                            value += element;
-                        }
-                    });
-                }
-
+                $(value.split(/\D/).reverse()).each(function (index, element) {
+                    if (element) {
+                        decimalPart = element;
+                        return false;
+                    }
+                });
                 value = value.replace(/\D/g, "");
-
-                value = value + "." + decimalPart;
+                value = value.replace(new RegExp(decimalPart + "$"), "." + decimalPart);
                 if (isNegative) {
                     value = "-" + value;
                 }
+                return parseFloat(value);
+            });
+        },
 
+		unmaskedWithOptions: function () {
+            return this.map(function () {
+                var value = ($(this).val() || "0"),
+					settings = $(this).data("settings") || defaultOptions,
+					regExp = new RegExp((settings.thousandsForUnmasked || settings.thousands), "g");
+                value = value.replace(regExp, "");
                 return parseFloat(value);
             });
         },
 
         init: function (parameters) {
-            parameters = $.extend({
-                prefix: "",
-                suffix: "",
-                affixesStay: true,
-                thousands: ",",
-                decimal: ".",
-                precision: 2,
-                allowZero: false,
-                allowNegative: false,
-                doubleClickSelection: true,
-                allowEmpty: false
-            }, parameters);
+			// the default options should not be shared with others
+            parameters = $.extend($.extend({}, defaultOptions), parameters);
 
             return this.each(function () {
                 var $input = $(this), settings,
@@ -219,13 +207,24 @@
 
                 function mask() {
                     var value = $input.val();
-                    // corrected by Kartik for initial empty value being treated as NaN
-                    if (settings.allowEmpty && (value === "" || isNaN(parseFloat(value)))) {
-                        $input.val("");
+                    if (settings.allowEmpty && value === "") {
                         return;
                     }
-                    if (settings.precision > 0 && value.indexOf(settings.decimal) < 0) {
-                        value += settings.decimal + new Array(settings.precision + 1).join(0);
+					var decimalPointIndex = value.indexOf(settings.decimal);
+                    if (settings.precision > 0) {
+						if(decimalPointIndex < 0){
+							value += settings.decimal + new Array(settings.precision + 1).join(0);
+						}
+						else {
+							// If the following decimal part dosen't have enough length against the precision, it needs to be filled with zeros.
+							var integerPart = value.slice(0, decimalPointIndex),
+								decimalPart = value.slice(decimalPointIndex + 1);
+							value = integerPart + settings.decimal + decimalPart +
+									new Array((settings.precision + 1) - decimalPart.length).join(0);
+						}
+                    } else if (decimalPointIndex > 0) {
+                        // if the precision is 0, discard the decimal part
+                        value = value.slice(0, decimalPointIndex);
                     }
                     $input.val(maskValue(value, settings));
                 }
@@ -248,6 +247,12 @@
                         e.preventDefault();
                     } else { // old internet explorer
                         e.returnValue = false;
+                    }
+                }
+
+                function fixMobile() {
+                    if ($.browser.device) {
+                        $input.attr("type", "tel");
                     }
                 }
 
@@ -401,7 +406,7 @@
 
                     if (!!settings.selectAllOnFocus) {
                         input.select();
-                    } else if (input.createTextRange) {
+                    } else if (input.createTextRange && settings.bringCaretAtEndOnFocus) {
                         textRange = input.createTextRange();
                         textRange.collapse(false); // set the cursor at the end of the input
                         textRange.select();
@@ -457,7 +462,7 @@
                         // the focus event. The focus event is
                         // also fired when the input is clicked.
                         return;
-                    } else if (input.setSelectionRange) {
+                    } else if (input.setSelectionRange && settings.bringCaretAtEndOnFocus) {
                         length = $input.val().length;
                         input.setSelectionRange(length, length);
                     } else {
@@ -469,7 +474,7 @@
                     var input = $input.get(0),
                         start,
                         length;
-                    if (input.setSelectionRange) {
+                    if (input.setSelectionRange && settings.bringCaretAtEndOnFocus) {
                         length = $input.val().length;
                         start = settings.doubleClickSelection ? 0 : length;
                         input.setSelectionRange(start, length);
@@ -478,6 +483,7 @@
                     }
                 }
 
+                fixMobile();
                 $input.unbind(".maskMoney");
                 $input.bind("keypress.maskMoney", keypressEvent);
                 $input.bind("keydown.maskMoney", keydownEvent);
@@ -517,20 +523,13 @@
         return maskValueStandard(value, settings);
     }
 
-    /**
-     * Modified by Kartik Visweswaran 23-May-2018
-     * for correct decimals and precision handling
-     */
     function maskValueStandard(value, settings) {
-        var v = parseFloat(value);
-        if (!isNaN(v)) {
-            value = v.toFixed(settings.precision) + '';
-        }
-
         var negative = (value.indexOf("-") > -1 && settings.allowNegative) ? "-" : "",
             onlyNumbers = value.replace(/[^0-9]/g, ""),
             integerPart = onlyNumbers.slice(0, onlyNumbers.length - settings.precision),
-            newValue, decimalPart, leadingZeros;
+            newValue,
+            decimalPart,
+            leadingZeros;
 
         newValue = buildIntegerPart(integerPart, negative, settings);
 
